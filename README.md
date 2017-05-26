@@ -15,7 +15,6 @@ $ npm i hdwallet
 var HDWallet = require('hdwallet')
 
 var hd = new HDWallet({
-  settings = settings || {}
   redisPort: 'optional',
   redisHost: 'optional',
   network: 'optional',
