@@ -25,13 +25,13 @@ var HDWallet = function (settings) {
   var self = this
 
   settings = settings || {}
-  if (settings.network === 'testnet') {
-    settings.blockExplorerHost = settings.blockExplorerHost || testnetBlockExplorerHost
-    self.network = bitcoin.networks.testnet
-  } else {
-    settings.blockExplorerHost = settings.blockExplorerHost || mainnetBlockExplorerHost
-    self.network = bitcoin.networks.bitcoin
+  if (settings.customNetwork && settings.network) {
+    bitcoin.networks[settings.network] = settings.customNetwork
   }
+  self.network = bitcoin.networks[settings.network] || bitcoin.networks.bitcoin
+  settings.blockExplorerHost = settings.blockExplorerHost || (
+    settings.network === 'testnet' ? testnetBlockExplorerHost : mainnetBlockExplorerHost
+  )
   self.blockexplorer = new BlockExplorerRpc(settings.blockExplorerHost)
   self.redisPort = settings.redisPort || 6379
   self.redisHost = settings.redisHost || '127.0.0.1'
@@ -118,10 +118,8 @@ HDWallet.decryptPrivateKey = function (encryptedPrivKey, password, network, prog
   }
   if (network) {
     if (typeof network === 'string') {
-      if (network === 'testnet') {
-        bip38.versions = {
-          private: 0xef
-        }
+      bip38.versions = {
+        private: bitcoin.networks[network].wif
       }
     } else {
       bip38.versions = {
@@ -155,7 +153,7 @@ HDWallet.createNewKey = function (network, pass, progressCallback) {
     progressCallback = pass
     pass = null
   }
-  network = (network === 'testnet' ? bitcoin.networks.testnet : bitcoin.networks.bitcoin)
+  network = bitcoin.networks[network] || bitcoin.networks.bitcoin
   var key = bitcoin.ECKey.makeRandom()
   var privateKey = key.toWIF(network)
   var privateSeed = key.d.toHex(32)
@@ -259,7 +257,10 @@ HDWallet.prototype.getAccount = function (index) {
 HDWallet.prototype.getKeyPrefix = function () {
   var self = this
 
-  var network = (self.network === bitcoin.networks.bitcoin) ? 'mainnet' : 'testnet'
+  var networks = bitcoin.networks
+  var network = (self.network === networks.bitcoin) ? 'mainnet' : Object.keys(networks).find(function (network) {
+    return self.network === networks[network]
+  })
   return doubleSha256(self.getPrivateSeed()) + '/' + network
 }
 
@@ -304,7 +305,7 @@ HDWallet.prototype.registerAddress = function (address, accountIndex, addressInd
   var self = this
 
   var addressKey = 'address/' + address
-  var coinType = self.network === bitcoin.networks.bitcoin ? 0 : 1
+  var coinType = self.network.coinType || (self.network === bitcoin.networks.bitcoin ? 0 : 1)
   change = (change) ? 1 : 0
   var addressValue = 'm/44\'/' + coinType + '\'/' + accountIndex + '\'/' + change + '/' + addressIndex
   self.setDB(addressKey, addressValue)
@@ -622,7 +623,7 @@ HDWallet.prototype.deriveAccount = function (accountIndex) {
     // purpose'
     node = node.deriveHardened(44)
     // coin_type'
-    node = node.deriveHardened(this.network === bitcoin.networks.bitcoin ? 0 : 1)
+    node = node.deriveHardened(this.network.coinType || (this.network === bitcoin.networks.bitcoin ? 0 : 1))
     this.preAccountNode = node
   }
   // account'
